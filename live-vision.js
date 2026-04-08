@@ -26,7 +26,7 @@ function setupLiveVision(server) {
           
           console.log(`📸 [VISION-${id}] Processing frame...`);
           
-          const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+          const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
           
           const prompt = `Você é a LingoLoom, uma professora de idiomas paciente e inteligente com visão computacional.
 O usuário está apontando a câmera para algo e perguntou: "${text}".
