@@ -89,8 +89,9 @@ Responda SEMPRE no seguinte formato JSON puro:
         }
       } catch (err) {
         console.error(`❌ [VISION-OPENAI-${id}] Error:`, err);
+        const errorMessage = err.message || "Erro desconhecido na análise";
         if (clientWs.readyState === WebSocket.OPEN) {
-            clientWs.send(JSON.stringify({ error: "Erro na análise da OpenAI. Verifique seus créditos." }));
+            clientWs.send(JSON.stringify({ error: `Erro OpenAI: ${errorMessage}` }));
         }
       }
     });
