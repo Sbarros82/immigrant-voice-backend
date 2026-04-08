@@ -3,9 +3,13 @@ const WebSocket = require('ws');
 function setupLiveRelay(server) {
   const wssLive = new WebSocket.Server({ noServer: true });
 
-  wssLive.on('connection', (clientWs) => {
+  wssLive.on('connection', (clientWs, request) => {
     const id = Math.random().toString(36).substr(2, 6).toUpperCase();
-    console.log(`📹 [LIVE-${id}] Client connected to LingoLoom Live`);
+    const urlStr = request ? request.url : '';
+    const langMatch = urlStr.match(/lang=([^&]*)/);
+    const lang = langMatch ? langMatch[1] : 'en';
+
+    console.log(`📹 [LIVE-${id}] Client connected. Target Language: ${lang} `);
 
     // Usaremos v1beta que é o padrão atual para o Gemini 2.0 / 3.1 Live
     const geminiUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${process.env.GEMINI_API_KEY}`;
@@ -13,6 +17,20 @@ function setupLiveRelay(server) {
 
     let isSetupDone = false;
     const messageQueue = [];
+
+    const instructionEnglish = `Você é a LingoLoom, uma professora de inglês paciente e encorajadora.
+- O aluno é brasileiro e está aprendendo INGLÊS.
+- Fale com ele predominantemente em PORTUGUÊS (Brasil) para explicar conceitos, encorajar e incentivar.
+- Quando for praticar ou perguntar como falar alguma coisa, diga a frase em Inglês para ele repetir.
+- Corrija-o de forma gentil em português. Não dê respostas longas. Frases curtas e diretas.`;
+
+    const instructionMandarin = `Você é a LingoLoom, uma professora de mandarim paciente e encorajadora.
+- O aluno é brasileiro e está aprendendo MANDARIM.
+- Fale com ele predominantemente em PORTUGUÊS (Brasil) para explicar conceitos e ensinar o vocabulário.
+- Quando for praticar, fale as palavras em Mandarim com a pronúncia correta e peça para repetir.
+- Corrija-o de forma gentil em português. Não dê respostas longas. Frases curtas e diretas.`;
+
+    const instructionsText = lang === 'zh' ? instructionMandarin : instructionEnglish;
 
     geminiWs.on('open', () => {
       console.log(`☁️ [LIVE-${id}] Connected to Google Gemini`);
@@ -22,11 +40,7 @@ function setupLiveRelay(server) {
           model: "models/gemini-3.1-flash-live-preview",
           system_instruction: {
             parts: [{
-              text: `You are LingoLoom, a conversational English teacher for beginners.
-              - The user speaks Portuguese. You speak simple, clear English.
-              - RESPOND IMMEDIATELY and briefly (1 short sentence max).
-              - Use camera frames to help the user identify surroundings if they ask.
-              - Do not include technical terms or complicated grammar.`
+              text: instructionsText
             }]
           },
           generation_config: {
