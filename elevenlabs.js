@@ -66,7 +66,7 @@ async function handleElevenLabs(text, scenario, language, onChunk) {
       },
       {
         headers: {
-          'xi-api-key': process.env.ELEVEN_API_KEY,
+          'xi-api-key': (process.env.ELEVEN_API_KEY || '').replace(/^sk[_|-]/, '').trim(),
           'Content-Type': 'application/json',
           Accept: 'audio/mpeg',
         },
