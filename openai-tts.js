@@ -3,14 +3,14 @@ const axios = require('axios');
 /**
  * Função para gerar áudio usando o OpenAI TTS API
  * @param {string} text - O texto a ser falado
- * @param {function} onAudioChunk - Callback para enviar os chunks de áudio via websocket
+ * @param {function} onAudioComplete - Callback para enviar o áudio completo via websocket
  */
-async function handleOpenAITTS(text, onAudioChunk) {
+async function handleOpenAITTS(text, onAudioComplete) {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error("OPENAI_API_KEY não configurada.");
 
   try {
-    console.log("🎤 Gerando áudio via OpenAI TTS (Voz: Nova)...");
+    console.log("🎤 Gerando áudio completo via OpenAI TTS (Voz: Nova)...");
     
     const response = await axios({
       method: 'post',
@@ -20,27 +20,16 @@ async function handleOpenAITTS(text, onAudioChunk) {
         'Content-Type': 'application/json'
       },
       data: {
-        model: 'tts-1', // tts-1 é mais rápido que tts-1-hd, ideal para tempo real
-        voice: 'nova',  // Voz feminina, profissional e clara
+        model: 'tts-1', 
+        voice: 'nova',  
         input: text,
         response_format: 'mp3'
       },
-      responseType: 'stream'
+      responseType: 'arraybuffer' // Pegamos o arquivo inteiro
     });
 
-    return new Promise((resolve, reject) => {
-      response.data.on('data', (chunk) => {
-        onAudioChunk(chunk);
-      });
-
-      response.data.on('end', () => {
-        resolve();
-      });
-
-      response.data.on('error', (err) => {
-        reject(err);
-      });
-    });
+    onAudioComplete(Buffer.from(response.data));
+    return Promise.resolve();
 
   } catch (error) {
     if (error.response) {

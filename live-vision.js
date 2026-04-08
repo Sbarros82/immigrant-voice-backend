@@ -134,8 +134,8 @@ function setupLiveVision(server) {
         ${aiData.texto_completo}`;
         
         try {
-          await handleOpenAITTS(aiData.texto_completo, (audioChunk) => {
-            if (clientWs.readyState === WebSocket.OPEN) clientWs.send(audioChunk);
+          await handleOpenAITTS(aiData.texto_completo, (fullAudioBuffer) => {
+            if (clientWs.readyState === WebSocket.OPEN) clientWs.send(fullAudioBuffer);
           });
           clientWs.send(JSON.stringify({ type: 'audio_done' }));
         } catch (audioErr) {
