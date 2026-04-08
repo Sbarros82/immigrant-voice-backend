@@ -2,7 +2,7 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { handleElevenLabs } = require('./elevenlabs');
 const WebSocket = require('ws');
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY, { apiVersion: 'v1' });
 
 function setupLiveVision(server) {
   const wssVision = new WebSocket.Server({ noServer: true });
@@ -26,7 +26,7 @@ function setupLiveVision(server) {
           
           console.log(`📸 [VISION-${id}] Processing frame...`);
           
-          const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+          const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
           
           const prompt = `Você é a LingoLoom, uma professora de idiomas paciente e inteligente com visão computacional.
 O usuário está apontando a câmera para algo e perguntou: "${text}".
