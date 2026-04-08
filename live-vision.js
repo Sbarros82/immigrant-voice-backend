@@ -2,6 +2,19 @@ const OpenAI = require('openai');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { handleOpenAITTS } = require('./openai-tts');
 const WebSocket = require('ws');
+const fs = require('fs');
+const path = require('path');
+
+// Carrega Repositório de Conhecimento
+let knowledge = {};
+try {
+  const knowledgePath = path.join(__dirname, 'data', 'knowledge.json');
+  if (fs.existsSync(knowledgePath)) {
+    knowledge = JSON.parse(fs.readFileSync(knowledgePath, 'utf8'));
+  }
+} catch (err) {
+  console.error("⚠️ Erro ao carregar knowledge.json:", err.message);
+}
 
 // Inicializa provedores
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -14,10 +27,13 @@ function setupLiveVision(server) {
     const id = Math.random().toString(36).substr(2, 6).toUpperCase();
     const urlStr = request ? request.url : '';
     const langMatch = urlStr.match(/lang=([^&]*)/);
+    const modeMatch = urlStr.match(/mode=([^&]*)/); // NOVO: Captura o modo (math ou translate)
+    
     const targetLang = langMatch ? langMatch[1] : 'en';
+    const mode = modeMatch ? modeMatch[1] : 'tutor'; // Padrão é tutor (idiomas)
     const targetLangName = targetLang === 'zh' ? 'Mandarim' : 'Inglês';
 
-    console.log(`👩‍🏫 [LUMA-${id}] Professora Luma Online (${targetLangName})`);
+    console.log(`👩‍🏫 [LUMA-${id}] Modo: ${mode.toUpperCase()} (${targetLangName})`);
 
     clientWs.on('message', async (message) => {
       try {
@@ -66,29 +82,31 @@ function setupLiveVision(server) {
         const { image, text = "O que é isso?" } = data.vision_input;
         let aiData = null;
 
-        // PROMPT DA PROFESSORA LUMA
-        const systemPrompt = `Você é a Professora Luma 3.0, uma assistente analítica e mentora brasileira (PT-BR) de elite. 
-        
-        SUA MISSÃO:
-        Você é multitarefa. Além de ensinar idiomas, você é especialista em:
-        1. MATEMÁTICA: Se ver uma conta ou equação, resolva e explique o passo a passo.
-        2. DOCUMENTOS: Se ver um texto, tabela ou documento, resuma os pontos principais e explique-os.
-        3. OBJETOS: Continue ensinando nomes de objetos nos idiomas alvo.
-        4. ASSISTÊNCIA GERAL: Responda de forma inteligente a qualquer solicitação visual.
+        // PROMPT DINÂMICO BASEADO NO MODO
+        let systemPrompt = "";
 
-        DIRETRIZES DE PERSONALIDADE:
-        - Use um português do Brasil EXTREMAMENTE natural e coloquial ("tá", "pra", "bora").
-        - Seja didática, carismática e MUITO clara na explicação.
-        - Se for uma conta de matemática, seja encorajadora: "Essa é fácil, vem comigo!".
+        if (mode === 'math') {
+          systemPrompt = `Você é a Professora Luma Especialista em Matemática (Fundamental 1 e 2).
+          REGRAS DE OURO: ${JSON.stringify(knowledge.math_rules)}
+          Sua missão é ensinar, não apenas dar a resposta. Use analogias, seja paciente e extremamente clara.`;
+        } else if (mode === 'translate') {
+          systemPrompt = `Você é a Luma Tradutora de Elite e Analista de Documentos.
+          REGRAS DE OURO: ${JSON.stringify(knowledge.translation_rules)}
+          Sua missão é traduzir com contexto, explicar nuances e ajudar a entender textos complexos.`;
+        } else {
+          systemPrompt = `Você é a Professora Luma 3.0, uma assistente analítica e mentora brasileira (PT-BR) de elite. 
+          Foco: Ensino de Idiomas (${targetLangName}) e Assistência Geral.
+          Use um português natural ("tá", "pra", "bora"). Seja didática e carismática.`;
+        }
 
-        REGRAS DE RESPOSTA (JSON PURO):
+        systemPrompt += `\nREGRAS DE RESPOSTA (JSON PURO):
         {
-          "resposta_pt": "Explicação ou identificação principal em PT-BR (Didática e direta).",
-          "termo_target": "Termo principal no idioma alvo (ou 'N/A' se for apenas matemática/doc).",
-          "explicacao_en_cn": "Breve explicação técnica ou resumo no idioma alvo.",
-          "pronuncia": "Transcrição fonética se houver termo novo, ou 'N/A'.",
-          "curiosidade_cultural": "Fato interessante sobre o assunto ou dica de uso.",
-          "texto_completo": "A frase exata que você quer que a Luma fale (deve ser Completa e Natural)."
+          "resposta_pt": "Explicação principal em PT-BR.",
+          "termo_target": "Termo no idioma alvo (ou 'N/A').",
+          "explicacao_en_cn": "Resumo ou tradução no idioma alvo.",
+          "pronuncia": "Transcrição fonética ou 'N/A'.",
+          "curiosidade_cultural": "Dica extra ou fato interessante.",
+          "texto_completo": "A frase exata que você vai falar."
         }`;
 
         // 1. VISÃO (OpenAI -> Gemini Fallback)
