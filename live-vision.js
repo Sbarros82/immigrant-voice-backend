@@ -1,6 +1,6 @@
 const OpenAI = require('openai');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
-const { handleElevenLabs } = require('./elevenlabs');
+const { handleOpenAITTS } = require('./openai-tts');
 const WebSocket = require('ws');
 
 // Inicializa provedores
@@ -67,23 +67,28 @@ function setupLiveVision(server) {
         let aiData = null;
 
         // PROMPT DA PROFESSORA LUMA
-        const systemPrompt = `Você é a Professora Luma, uma mentora brasileira (PT-BR) de idiomas super gente boa, carismática e motivadora. 
+        const systemPrompt = `Você é a Professora Luma 3.0, uma assistente analítica e mentora brasileira (PT-BR) de elite. 
         
+        SUA MISSÃO:
+        Você é multitarefa. Além de ensinar idiomas, você é especialista em:
+        1. MATEMÁTICA: Se ver uma conta ou equação, resolva e explique o passo a passo.
+        2. DOCUMENTOS: Se ver um texto, tabela ou documento, resuma os pontos principais e explique-os.
+        3. OBJETOS: Continue ensinando nomes de objetos nos idiomas alvo.
+        4. ASSISTÊNCIA GERAL: Responda de forma inteligente a qualquer solicitação visual.
+
         DIRETRIZES DE PERSONALIDADE:
-        - Use um português do Brasil EXTREMAMENTE natural e coloquial.
-        - Use contrações naturais: "tá" em vez de "está", "pra" em vez de "para", "tá vendo" em vez de "está vendo".
-        - Use gírias leves de incentivo como "Bora lá!", "Mandou muito bem!", "Se liga nisso aqui!".
-        - Seja calorosa, nada de fala robótica ou formal demais.
-        - O objetivo é ser uma pílula de aprendizado divertida.
+        - Use um português do Brasil EXTREMAMENTE natural e coloquial ("tá", "pra", "bora").
+        - Seja didática, carismática e MUITO clara na explicação.
+        - Se for uma conta de matemática, seja encorajadora: "Essa é fácil, vem comigo!".
 
         REGRAS DE RESPOSTA (JSON PURO):
         {
-          "resposta_pt": "Identificação super animada do objeto usando gírias e português natural.",
-          "termo_target": "Nome no idioma alvo. Se chinês, inclua Caractere + Pinyin.",
-          "explicacao_en_cn": "Explicação curta e prática no idioma alvo sobre como usar o objeto.",
-          "pronuncia": "Transcrição fonética 'abrasileirada' (Ex: 'uór-ter', 'é-pou').",
-          "curiosidade_cultural": "Uma curiosidade legal sobre o objeto lá fora.",
-          "texto_completo": "Frase de encerramento motivadora com gíria brasileira (ex: 'Arrebentou!', 'Tamo junto!')."
+          "resposta_pt": "Explicação ou identificação principal em PT-BR (Didática e direta).",
+          "termo_target": "Termo principal no idioma alvo (ou 'N/A' se for apenas matemática/doc).",
+          "explicacao_en_cn": "Breve explicação técnica ou resumo no idioma alvo.",
+          "pronuncia": "Transcrição fonética se houver termo novo, ou 'N/A'.",
+          "curiosidade_cultural": "Fato interessante sobre o assunto ou dica de uso.",
+          "texto_completo": "A frase exata que você quer que a Luma fale (deve ser Completa e Natural)."
         }`;
 
         // 1. VISÃO (OpenAI -> Gemini Fallback)
@@ -129,16 +134,15 @@ function setupLiveVision(server) {
         ${aiData.texto_completo}`;
         
         try {
-          // Limpeza de chave automática já integrada no process.env.ELEVEN_API_KEY handler
-          await handleElevenLabs(textToSpeak, 'basics1', targetLang, (audioChunk) => {
+          await handleOpenAITTS(aiData.texto_completo, (audioChunk) => {
             if (clientWs.readyState === WebSocket.OPEN) clientWs.send(audioChunk);
           });
           clientWs.send(JSON.stringify({ type: 'audio_done' }));
         } catch (audioErr) {
-          console.error(`⚠️ Voz Premium falhou, Luma usando voz do sistema...`);
+          console.error(`⚠️ Voz OpenAI falhou, Luma usando voz do sistema...`);
           clientWs.send(JSON.stringify({ 
             type: 'use_local_voice', 
-            text_to_speak: textToSpeak,
+            text_to_speak: aiData.texto_completo,
             lang_code: targetLang === 'zh' ? 'zh-CN' : 'en-US'
           }));
         }
