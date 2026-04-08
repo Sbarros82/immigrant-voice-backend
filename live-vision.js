@@ -35,7 +35,14 @@ function setupLiveVision(server) {
             messages: [
               {
                 role: "system",
-                content: `LingoLoom. Responda APENAS JSON: {"resposta_pt": "...", "termo_target": "...", "pronuncia": "...", "texto_completo": "..."}`
+                content: `Você é o Tutor LingoLoom. Analise a imagem e responda APENAS JSON puro: 
+                {
+                  "resposta_pt": "O que é o objeto em português", 
+                  "termo_target": "O nome do objeto em inglês", 
+                  "explicacao_en": "Uma frase curta em inglês explicando o uso do objeto",
+                  "pronuncia": "Como se pronuncia foneticamente", 
+                  "texto_completo": "Uma frase curta em português"
+                }`
               },
               {
                 role: "user",
@@ -53,7 +60,7 @@ function setupLiveVision(server) {
           console.log(`⚠️ OpenAI Vision failed, trying Gemini...`);
           const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
           const result = await model.generateContent([
-            `LingoLoom. Responda APENAS JSON puro (sem markdown): {"resposta_pt": "...", "termo_target": "...", "pronuncia": "...", "texto_completo": "..."}`,
+            `LingoLoom Tutor. Responda APENAS JSON: {"resposta_pt": "...", "termo_target": "...", "explicacao_en": "...", "pronuncia": "...", "texto_completo": "..."}`,
             { inlineData: { data: image, mimeType: "image/jpeg" } }
           ]);
           const freshText = result.response.text().replace(/```json|```/g, '').trim();
@@ -61,7 +68,7 @@ function setupLiveVision(server) {
           providerUsed = "Gemini";
         }
 
-        // Enviar os dados de texto IMEDIATAMENTE (assim ele já desenha na tela)
+        // Enviar os dados de texto IMEDIATAMENTE
         clientWs.send(JSON.stringify({
           type: 'text_update',
           text: aiData.resposta_pt,
@@ -70,8 +77,8 @@ function setupLiveVision(server) {
           full_text: aiData.texto_completo
         }));
 
-        // 2. VOZ (ElevenLabs -> Fallback para Voz Local do Frontend)
-        const textToSpeak = `${aiData.resposta_pt}. Em ${targetLangName} dizemos: ${aiData.termo_target}. Repita comigo: ${aiData.termo_target}.`;
+        // 2. VOZ (Português + Explicação em Inglês)
+        const textToSpeak = `${aiData.resposta_pt}. In English we call it ${aiData.termo_target}. ${aiData.explicacao_en}. Repeat with me: ${aiData.termo_target}.`;
         
         try {
           console.log(`🎙️ [VOICE] Attempting Premium Voice (ElevenLabs)...`);
