@@ -19,7 +19,7 @@ function setupLiveRelay(server) {
       
       const setupMsg = {
         setup: {
-          model: "models/gemini-2.0-flash-exp", 
+          model: `models/${process.env.GEMINI_MODEL || 'gemini-2.0-flash'}`,
           system_instruction: {
             parts: [{
               text: `You are LingoLoom, a conversational English teacher for beginners.
