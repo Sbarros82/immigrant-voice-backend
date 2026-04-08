@@ -16,8 +16,8 @@ const server = http.createServer(app);
 // Actually wss binds to server, but we need to prevent it from intercepting our `/live` upgrade.
 const wss = new WebSocket.Server({ noServer: true });
 
-const { setupLiveRelay } = require('./gemini-live');
-const liveWss = setupLiveRelay(server);
+const { setupLiveVision } = require('./live-vision');
+const liveWss = setupLiveVision(server);
 
 server.on('upgrade', (request, socket, head) => {
   const { pathname } = new URL(request.url, `http://${request.headers.host}`);

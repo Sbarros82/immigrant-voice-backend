@@ -37,7 +37,7 @@ function setupLiveRelay(server) {
       
       const setupMsg = {
         setup: {
-          model: "models/gemini-3.1-flash-live-preview",
+          model: "models/gemini-2.0-flash",
           system_instruction: {
             parts: [{
               text: instructionsText
