@@ -3,9 +3,8 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { handleElevenLabs } = require('./elevenlabs');
 const WebSocket = require('ws');
 
-// Inicializa ambos os provedores
+// Inicializa provedores
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-// Usamos a versão v1 explicitamente aqui para evitar o erro 404 do Gemini
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY, { apiVersion: 'v1' });
 
 function setupLiveVision(server) {
@@ -18,27 +17,25 @@ function setupLiveVision(server) {
     const targetLang = langMatch ? langMatch[1] : 'en';
     const targetLangName = targetLang === 'zh' ? 'Mandarim' : 'Inglês';
 
-    console.log(`👁️ [VISION-${id}] Client connected. Target: ${targetLangName}`);
+    console.log(`👁️ [VISION-${id}] Session Started (${targetLangName})`);
 
     clientWs.on('message', async (message) => {
       try {
         const data = JSON.parse(message.toString());
         if (!data.vision_input) return;
 
-        const { image, text = "O que você está vendo agora?" } = data.vision_input;
+        const { image, text = "O que você está vendo?" } = data.vision_input;
         let aiData = null;
         let providerUsed = "";
-        let lastError = "";
 
-        // 1. Tenta OpenAI (GPT-4o-mini)
+        // 1. VISÃO (OpenAI -> Gemini Fallback)
         try {
-          console.log(`📸 [VISION-${id}] Attempting OpenAI...`);
           const response = await openai.chat.completions.create({
             model: "gpt-4o-mini",
             messages: [
               {
                 role: "system",
-                content: `Você é a LingoLoom. Identifique o objeto e responda em JSON: {"resposta_pt": "...", "termo_target": "...", "pronuncia": "...", "texto_completo": "..."}`
+                content: `LingoLoom. Responda APENAS JSON: {"resposta_pt": "...", "termo_target": "...", "pronuncia": "...", "texto_completo": "..."}`
               },
               {
                 role: "user",
@@ -52,33 +49,19 @@ function setupLiveVision(server) {
           });
           aiData = JSON.parse(response.choices[0].message.content);
           providerUsed = "OpenAI";
-        } catch (openaiErr) {
-          lastError = `OpenAI: ${openaiErr.message}`;
-          console.error(`⚠️ [VISION-${id}] OpenAI Failed: ${openaiErr.message}. Trying Gemini...`);
-          
-          // 2. Tenta Gemini (Fallback)
-          try {
-            const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-            const prompt = `Você é a LingoLoom. Identifique o objeto e ensine em ${targetLangName}. Responda APENAS JSON puro: {"resposta_pt": "...", "termo_target": "...", "pronuncia": "...", "texto_completo": "..."}`;
-
-            const result = await model.generateContent([
-              prompt,
-              { inlineData: { data: image, mimeType: "image/jpeg" } }
-            ]);
-
-            const responseText = result.response.text();
-            const cleanJson = responseText.replace(/```json|```/g, '').trim();
-            aiData = JSON.parse(cleanJson);
-            providerUsed = "Gemini";
-          } catch (geminiErr) {
-            lastError += ` | Gemini: ${geminiErr.message}`;
-            throw new Error(lastError); // Ambos falharam
-          }
+        } catch (visionErr) {
+          console.log(`⚠️ OpenAI Vision failed, trying Gemini...`);
+          const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+          const result = await model.generateContent([
+            `LingoLoom. Responda APENAS JSON puro (sem markdown): {"resposta_pt": "...", "termo_target": "...", "pronuncia": "...", "texto_completo": "..."}`,
+            { inlineData: { data: image, mimeType: "image/jpeg" } }
+          ]);
+          const freshText = result.response.text().replace(/```json|```/g, '').trim();
+          aiData = JSON.parse(freshText);
+          providerUsed = "Gemini";
         }
 
-        console.log(`✅ [VISION-${id}] Success via ${providerUsed}`);
-
-        // Enviar para o frontend e gerar áudio...
+        // Enviar os dados de texto IMEDIATAMENTE (assim ele já desenha na tela)
         clientWs.send(JSON.stringify({
           type: 'text_update',
           text: aiData.resposta_pt,
@@ -87,16 +70,29 @@ function setupLiveVision(server) {
           full_text: aiData.texto_completo
         }));
 
+        // 2. VOZ (ElevenLabs -> Fallback para Voz Local do Frontend)
         const textToSpeak = `${aiData.resposta_pt}. Em ${targetLangName} dizemos: ${aiData.termo_target}. Repita comigo: ${aiData.termo_target}.`;
-        await handleElevenLabs(textToSpeak, 'basics1', targetLang, (audioChunk) => {
-          if (clientWs.readyState === WebSocket.OPEN) clientWs.send(audioChunk);
-        });
-        clientWs.send(JSON.stringify({ type: 'audio_done' }));
+        
+        try {
+          console.log(`🎙️ [VOICE] Attempting Premium Voice (ElevenLabs)...`);
+          await handleElevenLabs(textToSpeak, 'basics1', targetLang, (audioChunk) => {
+            if (clientWs.readyState === WebSocket.OPEN) clientWs.send(audioChunk);
+          });
+          clientWs.send(JSON.stringify({ type: 'audio_done' }));
+        } catch (audioErr) {
+          console.error(`⚠️ ElevenLabs failed: ${audioErr.message}. Triggering Local Voice...`);
+          // Avisa o frontend para usar a voz do sistema (Google/Apple)
+          clientWs.send(JSON.stringify({ 
+            type: 'use_local_voice', 
+            text_to_speak: textToSpeak,
+            lang_code: targetLang === 'zh' ? 'zh-CN' : 'en-US'
+          }));
+        }
 
       } catch (err) {
-        console.error(`❌ [VISION-${id}] FAIURE:`, err.message);
+        console.error(`❌ Global error:`, err.message);
         if (clientWs.readyState === WebSocket.OPEN) {
-            clientWs.send(JSON.stringify({ error: `Dificuldade técnica: ${err.message}` }));
+          clientWs.send(JSON.stringify({ error: "Erro de processamento." }));
         }
       }
     });

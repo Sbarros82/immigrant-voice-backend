@@ -37,6 +37,7 @@ server.on('upgrade', (request, socket, head) => {
 app.get('/health', (_req, res) => {
   res.json({
     status: 'ok',
+    version: '2.0-fallback-active',
     mockMode: String(process.env.MOCK_MODE).trim() === 'true',
     timestamp: new Date().toISOString(),
   });
