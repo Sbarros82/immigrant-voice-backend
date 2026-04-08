@@ -58,9 +58,9 @@ async function handleElevenLabs(text, scenario, language, onChunk) {
         text,
         model_id: 'eleven_multilingual_v2',
         voice_settings: {
-          stability: 0.5,
-          similarity_boost: 0.8,
-          style: 0.3,
+          stability: 0.35,
+          similarity_boost: 0.9,
+          style: 0.45,
           use_speaker_boost: true,
         },
       },
