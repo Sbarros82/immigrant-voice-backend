@@ -17,39 +17,86 @@ function setupLiveVision(server) {
     const targetLang = langMatch ? langMatch[1] : 'en';
     const targetLangName = targetLang === 'zh' ? 'Mandarim' : 'Inglês';
 
-    console.log(`👁️ [VISION-${id}] Session Started (${targetLangName})`);
+    console.log(`👩‍🏫 [LUMA-${id}] Professora Luma Online (${targetLangName})`);
 
     clientWs.on('message', async (message) => {
       try {
         const data = JSON.parse(message.toString());
+        
+        // --- VALIDAÇÃO DE PRONÚNCIA (OUVIDO DA LUMA) ---
+        if (data.type === 'user_voice_data' && data.audio) {
+            console.log(`👂 [LUMA] Validando pronúncia de: ${data.target}`);
+            try {
+              const buffer = Buffer.from(data.audio, 'base64');
+              const fileName = `/tmp/user_voice_${id}.webm`;
+              const fs = require('fs');
+              fs.writeFileSync(fileName, buffer);
+
+              const transcription = await openai.audio.transcriptions.create({
+                file: fs.createReadStream(fileName),
+                model: "whisper-1",
+              });
+
+              const spokenText = transcription.text.toLowerCase().replace(/[.,!?;]/g, '').trim();
+              const targetLower = (data.target || "").toLowerCase().replace(/[.,!?;]/g, '').trim();
+
+              console.log(`📝 [LUMA] Aluno falou: "${spokenText}" (Esperado: "${targetLower}")`);
+
+              // Verificação Simples de Acerto
+              const success = spokenText.includes(targetLower) || targetLower.includes(spokenText);
+
+              if (success) {
+                console.log("✅ Pronúncia correta! Comemorando...");
+                clientWs.send(JSON.stringify({ 
+                  type: 'pronunciation_feedback', 
+                  success: true 
+                }));
+              }
+              
+              // Limpa arquivo temporário
+              fs.unlinkSync(fileName);
+            } catch (err) {
+              console.error("❌ Erro na audição da Luma:", err.message);
+            }
+            return;
+        }
+
         if (!data.vision_input) return;
 
-        const { image, text = "O que você está vendo?" } = data.vision_input;
+        const { image, text = "O que é isso?" } = data.vision_input;
         let aiData = null;
-        let providerUsed = "";
+
+        // PROMPT DA PROFESSORA LUMA
+        const systemPrompt = `Você é o Tutor LingoLoom, chamado Professora Luma. 
+        Você é uma professora de idiomas brasileira (PT-BR) extremamente carismática, paciente e motivadora. 
+        Seu objetivo é transformar a análise de imagens em uma pílula de aprendizado divertida.
+
+        DIRETRIZES DE PERSONALIDADE:
+        - Use gírias leves e tom encorajador (Bora lá!, Mandou bem!, Dá uma olhada nisso).
+        - Explicação clara, sem termos técnicos complicados.
+        - Se for Inglês, foque em expressões do dia a dia. 
+        - Se for Mandarim, foque na ideia visual do caractere (Pinyin).
+
+        REGRAS DE RESPOSTA (JSON PURO):
+        {
+          "resposta_pt": "Identificação entusiasmada do objeto em PT-BR brasileiro natural.",
+          "termo_target": "Nome no idioma alvo. Se chinês, inclua Caractere + Pinyin.",
+          "explicacao_en_cn": "Explicação curta e funcional no idioma alvo sobre uso/local.",
+          "pronuncia": "Transcrição fonética aproximada para brasileiros (Ex: 'é-pou' para apple).",
+          "curiosidade_cultural": "Breve nota cultural sobre o objeto no país de destino.",
+          "texto_completo": "Frase final de reforço positivo com gíria PT-BR."
+        }`;
 
         // 1. VISÃO (OpenAI -> Gemini Fallback)
         try {
           const response = await openai.chat.completions.create({
             model: "gpt-4o-mini",
             messages: [
-              {
-                role: "system",
-                content: `Você é o Tutor LingoLoom, um professor brasileiro super amigável e paciente. 
-                Analise a imagem e responda APENAS JSON puro. 
-                IMPORTANTE: Use Português do Brasil (PT-BR) natural e coloquial, como se estivesse conversando com um amigo.
-                {
-                  "resposta_pt": "O que é o objeto (em PT-BR natural e amigável)", 
-                  "termo_target": "O nome do objeto em inglês", 
-                  "explicacao_en": "Uma frase curta em inglês explicando o uso do objeto",
-                  "pronuncia": "Como se pronuncia foneticamente", 
-                  "texto_completo": "Uma frase de encorajamento em PT-BR"
-                }`
-              },
+              { role: "system", content: systemPrompt },
               {
                 role: "user",
                 content: [
-                  { type: "text", text: text },
+                  { type: "text", text: `Luma, o que é isso aqui que eu estou vendo? ${text}` },
                   { type: "image_url", image_url: { url: `data:image/jpeg;base64,${image}` } },
                 ],
               },
@@ -57,40 +104,39 @@ function setupLiveVision(server) {
             response_format: { type: "json_object" },
           });
           aiData = JSON.parse(response.choices[0].message.content);
-          providerUsed = "OpenAI";
         } catch (visionErr) {
-          console.log(`⚠️ OpenAI Vision failed, trying Gemini...`);
+          console.log(`⚠️ OpenAI falhou, Luma pedindo ajuda pro Gemini...`);
           const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
           const result = await model.generateContent([
-            `LingoLoom Tutor. Responda APENAS JSON: {"resposta_pt": "...", "termo_target": "...", "explicacao_en": "...", "pronuncia": "...", "texto_completo": "..."}`,
+            `${systemPrompt}\nResponda APENAS JSON.`,
             { inlineData: { data: image, mimeType: "image/jpeg" } }
           ]);
           const freshText = result.response.text().replace(/```json|```/g, '').trim();
           aiData = JSON.parse(freshText);
-          providerUsed = "Gemini";
         }
 
-        // Enviar os dados de texto IMEDIATAMENTE
+        // 2. ENVIAR DADOS COMPLETOS PARA A UI
         clientWs.send(JSON.stringify({
-          type: 'text_update',
-          text: aiData.resposta_pt,
-          targetText: aiData.termo_target,
-          pronunciation: aiData.pronuncia,
-          full_text: aiData.texto_completo
+          type: 'luma_update',
+          ...aiData
         }));
 
-        // 2. VOZ (Português + Explicação em Inglês)
-        const textToSpeak = `${aiData.resposta_pt}. In English we call it ${aiData.termo_target}. ${aiData.explicacao_en}. Repeat with me: ${aiData.termo_target}.`;
+        // 3. VOZ DA LUMA (Personalidade e Cultura)
+        const textToSpeak = `${aiData.resposta_pt}. 
+        In ${targetLangName} we say: ${aiData.termo_target}. 
+        ${aiData.explicacao_en_cn}. 
+        Dica da Luma: ${aiData.curiosidade_cultural}. 
+        Repita agora: ${aiData.termo_target}. 
+        ${aiData.texto_completo}`;
         
         try {
-          console.log(`🎙️ [VOICE] Attempting Premium Voice (ElevenLabs)...`);
+          // Limpeza de chave automática já integrada no process.env.ELEVEN_API_KEY handler
           await handleElevenLabs(textToSpeak, 'basics1', targetLang, (audioChunk) => {
             if (clientWs.readyState === WebSocket.OPEN) clientWs.send(audioChunk);
           });
           clientWs.send(JSON.stringify({ type: 'audio_done' }));
         } catch (audioErr) {
-          console.error(`⚠️ ElevenLabs failed: ${audioErr.message}. Triggering Local Voice...`);
-          // Avisa o frontend para usar a voz do sistema (Google/Apple)
+          console.error(`⚠️ Voz Premium falhou, Luma usando voz do sistema...`);
           clientWs.send(JSON.stringify({ 
             type: 'use_local_voice', 
             text_to_speak: textToSpeak,
@@ -99,14 +145,14 @@ function setupLiveVision(server) {
         }
 
       } catch (err) {
-        console.error(`❌ Global error:`, err.message);
+        console.error(`❌ Erro Crítico:`, err.message);
         if (clientWs.readyState === WebSocket.OPEN) {
-          clientWs.send(JSON.stringify({ error: "Erro de processamento." }));
+          clientWs.send(JSON.stringify({ error: "Luma teve um pequeno contratempo, tente de novo!" }));
         }
       }
     });
 
-    clientWs.on('close', () => console.log(`🔌 [VISION-${id}] Disconnected`));
+    clientWs.on('close', () => console.log(`🔌 [LUMA-${id}] Luma saiu da sala`));
   });
 
   return wssVision;
