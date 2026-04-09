@@ -32,8 +32,11 @@ async function handleOpenAITTS(text, onAudioComplete) {
     return Promise.resolve();
 
   } catch (error) {
+    error.stage = "OpenAI_TTS";
     if (error.response) {
-      console.error("❌ Erro OpenAI TTS API:", error.response.data);
+      console.error("❌ Erro OpenAI TTS API:", error.response.status, error.response.data);
+    } else {
+      console.error("❌ Erro de Rede OpenAI TTS:", error.message);
     }
     throw error;
   }

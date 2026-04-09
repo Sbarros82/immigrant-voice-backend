@@ -66,7 +66,7 @@ async function handleElevenLabs(text, scenario, language, onChunk) {
       },
       {
         headers: {
-          'xi-api-key': (process.env.ELEVEN_API_KEY || '').replace(/^sk[_|-]/, '').trim(),
+          'xi-api-key': (process.env.ELEVEN_API_KEY || '').trim(),
           'Content-Type': 'application/json',
           Accept: 'audio/mpeg',
         },
@@ -83,7 +83,7 @@ async function handleElevenLabs(text, scenario, language, onChunk) {
       throw err;
     });
   } catch (error) {
-    let errMsg = error.message;
+    error.stage = "ElevenLabs";
     if (error.response && error.response.data) {
        console.error("ElevenLabs API Error:", error.response.status, error.response.statusText);
     } else {

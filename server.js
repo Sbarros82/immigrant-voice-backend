@@ -4,7 +4,7 @@ const http = require('http');
 const WebSocket = require('ws');
 const cors = require('cors');
 const { handleGemini } = require('./gemini');
-const { handleElevenLabs } = require('./elevenlabs');
+const { handleOpenAITTS } = require('./openai-tts');
 
 const app = express();
 app.use(cors({ origin: '*' }));
@@ -99,22 +99,22 @@ wss.on('connection', (ws) => {
       // 3. Start audio streaming
       send({ type: 'status', status: 'speaking' });
 
-      const audioChunks = [];
-      await handleElevenLabs(aiResponse.resposta, scenario, language, (chunk) => {
-        audioChunks.push(chunk);
+      await handleOpenAITTS(aiResponse.resposta, (buffer) => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(buffer);
+        }
       });
-
-      // Send all audio as one binary payload (works for WAV mock + MP3 real)
-      if (audioChunks.length > 0 && ws.readyState === WebSocket.OPEN) {
-        ws.send(Buffer.concat(audioChunks));
-      }
 
       send({ type: 'audio_done' });
       send({ type: 'status', status: 'idle' });
 
     } catch (err) {
-      console.error(`❌ [${id}] Error:`, err.message);
-      send({ type: 'error', message: err.message });
+      let stage = "GenAI";
+      if (err.stage === "OpenAI_TTS" || err.message.includes("OpenAI_TTS")) stage = "Audio";
+      
+      const detailedError = `[${stage}] ${err.message}`;
+      console.error(`❌ [${id}] Error:`, detailedError);
+      send({ type: 'error', message: detailedError });
       send({ type: 'status', status: 'idle' });
     }
   });
