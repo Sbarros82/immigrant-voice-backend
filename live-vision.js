@@ -5,15 +5,18 @@ const WebSocket = require('ws');
 const fs = require('fs');
 const path = require('path');
 
-// Carrega Repositório de Conhecimento
-let knowledge = {};
-try {
-  const knowledgePath = path.join(__dirname, 'data', 'knowledge.json');
-  if (fs.existsSync(knowledgePath)) {
-    knowledge = JSON.parse(fs.readFileSync(knowledgePath, 'utf8'));
+// Carrega Repositório de Conhecimento (Luma Brain)
+const BRAIN_PATH = path.join(__dirname, 'knowledge', 'LUMA_BRAIN.md');
+
+function loadBrainKnowledge() {
+  try {
+    if (fs.existsSync(BRAIN_PATH)) {
+      return fs.readFileSync(BRAIN_PATH, 'utf8');
+    }
+  } catch (err) {
+    console.error("⚠️ Erro ao carregar LUMA_BRAIN.md:", err.message);
   }
-} catch (err) {
-  console.error("⚠️ Erro ao carregar knowledge.json:", err.message);
+  return "";
 }
 
 // Inicializa provedores
@@ -82,21 +85,22 @@ function setupLiveVision(server) {
         const { image, text = "O que é isso?" } = data.vision_input;
         let aiData = null;
 
-        // PROMPT DINÂMICO BASEADO NO MODO
-        let systemPrompt = "";
+        // PROMPT DINÂMICO BASEADO NO MODO E NO CÉREBRO
+        const brainKnowledge = loadBrainKnowledge();
+        let systemPrompt = `Você é a Luma 3.0, uma Mentora de Inteligência Artificial Brasileira (PT-BR) de elite.\n\n`;
+        
+        if (brainKnowledge) {
+          systemPrompt += `--- CONHECIMENTO ESTRATÉGICO (LUMA BRAIN) ---\n${brainKnowledge}\n------------------------------------------\n\n`;
+        }
 
         if (mode === 'math') {
-          systemPrompt = `Você é a Professora Luma Especialista em Matemática (Fundamental 1 e 2).
-          REGRAS DE OURO: ${JSON.stringify(knowledge.math_rules)}
-          Sua missão é ensinar, não apenas dar a resposta. Use analogias, seja paciente e extremamente clara.`;
+          systemPrompt += `DIRETRIZ MATEMÁTICA: Você atua como Professora Luma Especialista no Ensino Fundamental. 
+          Use o fluxo pedagógico: 1. Identificar, 2. Explicar passo a passo, 3. Resultado, 4. Desafio Interativo.
+          NUNCA pule etapas ou dê apenas o resultado.`;
         } else if (mode === 'translate') {
-          systemPrompt = `Você é a Luma Tradutora de Elite e Analista de Documentos.
-          REGRAS DE OURO: ${JSON.stringify(knowledge.translation_rules)}
-          Sua missão é traduzir com contexto, explicar nuances e ajudar a entender textos complexos.`;
+          systemPrompt += `DIRETRIZ DE TRADUÇÃO: Você atua como Luma Tradutora de Elite. Analise o contexto, explique gírias e nuances.`;
         } else {
-          systemPrompt = `Você é a Professora Luma 3.0, uma assistente analítica e mentora brasileira (PT-BR) de elite. 
-          Foco: Ensino de Idiomas (${targetLangName}) e Assistência Geral.
-          Use um português natural ("tá", "pra", "bora"). Seja didática e carismática.`;
+          systemPrompt += `DIRETRIZ DE TUTORIA: Foco em Ensino de Idiomas (${targetLangName}). Use linguagem natural, carismática e digital.`;
         }
 
         systemPrompt += `\nREGRAS DE RESPOSTA (JSON PURO):
