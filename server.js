@@ -10,6 +10,9 @@ const app = express();
 app.use(cors({ origin: '*' }));
 app.use(express.json());
 
+const adminRouter = require('./admin');
+app.use('/admin', adminRouter);
+
 const server = http.createServer(app);
 
 // Legacy text-to-speech socket (we can leave this for backwards compatibility for older clients, mounted on root path)

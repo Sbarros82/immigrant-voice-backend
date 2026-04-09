@@ -1,3 +1,6 @@
+const fs = require('fs');
+const path = require('path');
+
 const SYSTEM_PROMPTS = {
   en: {
     basics1: `You are a friendly language tutor. The user is practicing basic greetings and introductions (hello, good morning, how are you, my name is). Keep it extremely simple. Respond in English, max 2 short sentences.`,
@@ -25,57 +28,88 @@ const SYSTEM_PROMPTS = {
     supermarket: `你是帮助顾客找产品的友好超市员工。指出促销信息，帮助找到商品，协助解答结账问题。保持随和和乐于助人。用普通话回答，最多2-3句话。`,
     police: `你是警察局前台的正式警察。专业处理报告、查询和文件工作。保持权威但尊重的态度。用普通话回答，最多2-3句话。`,
   },
+  pt: {
+    math: `Você é a Luma, uma mentora acadêmica de elite. O usuário precisa de reforço em matemática. Explique os conceitos passo a passo, de forma lógica e encorajadora. Use exemplos práticos. Responda em Português (Brasil).`,
+    translator: `Você é a Luma, uma tradutora de elite e especialista linguística. Sua missão é traduzir com precisão técnica e cultural, explicando gírias e nuances. Responda em Português (Brasil) com as explicações necessárias.`,
+    tutor: `Você é a Luma, uma tutora de comunicação avançada. Ajude o usuário a aprimorar seu vocabulário e gramática em Português (Brasil). Seja sofisticada e precisa.`,
+    basics1: `Você é a Luma, uma assistente virtual amigável. Ajude o usuário com conversas básicas em Português (Brasil).`,
+  }
 };
 
+/**
+ * Loads the local knowledge from LUMA_BRAIN.md
+ */
+function loadBrainKnowledge() {
+  try {
+    const brainPath = path.join(__dirname, 'knowledge', 'LUMA_BRAIN.md');
+    if (fs.existsSync(brainPath)) {
+      return fs.readFileSync(brainPath, 'utf8');
+    }
+  } catch (err) {
+    console.warn("⚠️ Não foi possível carregar o arquivo LUMA_BRAIN.md", err.message);
+  }
+  return "";
+}
+
 function getSystemPrompt(scenario, language) {
-  const langKey = language === 'zh' ? 'zh' : 'en';
+  const langKey = SYSTEM_PROMPTS[language] ? language : 'en';
   return SYSTEM_PROMPTS[langKey][scenario] || SYSTEM_PROMPTS[langKey].basics1;
 }
 
 function buildGeminiPrompt(userText, scenario, language, learnerMode = false, difficulty = 'beginner') {
   const system = getSystemPrompt(scenario, language);
-  const targetLangName = language === 'zh' ? 'Mandarin Chinese' : 'English';
+  const brain = loadBrainKnowledge();
+  
+  // Dynamic language mapping
+  let targetLangName = 'English';
+  if (language === 'zh') targetLangName = 'Mandarin Chinese';
+  if (language === 'pt') targetLangName = 'Portuguese (Brazilian)';
+  
   const nativeLang = 'Portuguese (Brazilian)';
 
   // Difficulty modifiers
   let diffInstructions = "";
   if (difficulty === 'beginner') {
-    diffInstructions = `CRITICAL: The user is an absolute beginner. Use ONLY very short, simple sentences. Use basic, everyday vocabulary. Speak slowly and clearly in your text structure. Provide the phonetic spelling of your response.`;
+    diffInstructions = `CRITICAL: The user is a beginner. Use short, simple sentences. Speak clearly. Provide phonetic spelling (pronuncia).`;
   } else if (difficulty === 'intermediate') {
-    diffInstructions = `The user is intermediate. Use standard conversational language, normal speed.`;
+    diffInstructions = `The user is intermediate. Use standard conversational language.`;
   } else {
-    diffInstructions = `The user is advanced. Use native-level idioms, complex sentences, and speak as naturally and quickly as a native would in a high-pressure real-life scenario.`;
+    diffInstructions = `The user is advanced. Use native-level idioms and complex logic.`;
   }
 
-  return `${system}
-  
+  return `
+SYSTEM INSTRUCTIONS:
+${system}
+
+BRAIN KNOWLEDGE (GROUND TRUTH):
+${brain || "No specific brain knowledge loaded."}
+
+DIFFICULTY LEVEL: ${difficulty}
 ${diffInstructions}
 
-User background: User is a language learner.
+LEARNER CONTEXT:
 ${learnerMode 
-  ? `IMPORTANT Learner Mode: The user is a beginner and will speak in ${nativeLang}. You must understand the ${nativeLang} text but ALWAYS respond IN CHARACTER using ${targetLangName}.` 
-  : `User is practicing ${targetLangName} and spoke in ${targetLangName}.`}
+  ? `IMPORTANT: The user is speaking in ${nativeLang}. You must understand it but ALWAYS respond IN CHARACTER using ${targetLangName}.` 
+  : `The user and you are communicating primarily in ${targetLangName}.`}
 
-User input: "${userText}"
+USER INPUT: "${userText}"
 
 Respond ONLY with valid JSON in this exact format (no markdown, no code blocks):
 {
-  "resposta": "your in-character response here (must be in ${targetLangName})",
-  "traducao": "the exact translation of your 'resposta' into ${nativeLang}",
-  "pronuncia": "${language === 'zh' ? 'The Pinyin with tone marks for your resposta' : 'A readable phonetic spelling of your English resposta for a Brazilian Portuguese speaker to read out loud (e.g., ai uont tchu)'}",
+  "resposta": "your in-character response (must be in ${targetLangName})",
+  "traducao": "the exact translation into ${nativeLang} (if response is already ${nativeLang}, provide a simplified version or the same text)",
+  "pronuncia": "phonetic spelling to help with pronunciation in ${targetLangName}",
   "correcao_gramatical": {
-    "tem_erro": ${learnerMode ? 'true' : 'boolean'},
+    "tem_erro": boolean,
     "original": "${userText}",
-    "correto": "how to say the user's intent in correct ${targetLangName}",
-    "explicacao": "${learnerMode 
-        ? `Provide the translation and a brief tip in ${nativeLang} on how to say this in ${targetLangName}. Example: 'Diz-se assim em ${targetLangName}: [phrase].'` 
-        : `brief, friendly grammar explanation in ${nativeLang}`}"
+    "correto": "correct version in session language",
+    "explicacao": "brief explanation in ${nativeLang}"
   },
-  "nivel_fluencia": "${language === 'zh' ? 'HSK 1 through HSK 6' : 'A1, A2, B1, B2, C1, or C2'}"
+  "nivel_fluencia": "A1-C2 or equivalent"
 }
 
-${learnerMode ? '' : 'If the user\'s speech had no grammatical errors, set "correcao_gramatical" to null.'}
-Always respond in character based on the scenario.`;
+If no errors, set "correcao_gramatical" to null (unless in learnerMode where feedback is always welcome).
+`;
 }
 
 module.exports = { getSystemPrompt, buildGeminiPrompt };
